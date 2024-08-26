@@ -1,0 +1,2 @@
+# Proxmox Provider
+virtual_environment_endpoint = "https://host:port"

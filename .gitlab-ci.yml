@@ -1,0 +1,244 @@
+# Personal Access Token:
+# Token name: pac_READ_API
+# CI/CD Variable Name: READ_API
+# Role: Developer
+# Scopes: read_api
+# Notes: Use for access bpg-proxmox-module.
+
+# Project Access Token:
+# Repository: self repo
+# Token name: pac_iac-cicd_1
+# CI/CD Variable Name: PAC_IAC_CICD_1
+# Role: Maintainer
+# Scopes: api, read_registry, write_registry
+# Notes: Manage project-level CI/CD variables, require maintainer and api scope.
+
+
+default:
+  image:
+    name: gitlab-registry.doman.com/container/iac-cicd:1.0.0
+    entrypoint: [""]
+
+# List of variables
+variables:
+  TF_STATE_NAME: "tf_state"          # Name of terraform state used in "terraform init" command
+  TF_STATE_ADDRESS: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
+
+# Authenticate to GitLab Infrastructure Registry.
+before_script:
+  - ls -la && pwd
+  - echo -e "credentials \"$CI_SERVER_HOST\" {\n  token = \"${READ_API}\"\n}" > ~/.terraformrc
+
+stages:
+  - build
+  - test
+  - deploy
+  - destroy
+
+Terraform Plan:
+  stage: build
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - sh terraform-init.sh
+    - sh terraform-plan.sh
+    - terraform show -json plan.tfplan > tf.json 
+  artifacts:
+    paths:
+      - terraform/plan.tfplan
+      - terraform/tf.json
+  tags:
+    - docker-socket
+
+1. Terraform FMT:
+  stage: test
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - terraform --version
+    - terraform fmt -recursive -check   
+  needs:
+    - job: Terraform Plan
+  tags:
+    - docker-socket
+
+2. Terraform Validate:
+  stage: test
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - sh terraform-init.sh
+    - terraform --version
+    - terraform validate
+  needs:
+    - job: Terraform Plan
+  tags:
+    - docker-socket
+
+3. Terraform Docs:
+  stage: test
+  # image: 
+  #   # name: quay.io/terraform-docs/terraform-docs:0.16.0
+  #   name: gitlab-registry.doman.com/container/iac-cicd:1.0.0
+  #   entrypoint: [""] 
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - terraform-docs -c .terraform-docs.yml . --output-file CHECK-README.md
+    - diff CHECK-README.md README.md
+  needs:
+    - job: Terraform Plan
+  tags:
+    - docker-socket
+
+4. Gitleaks:
+  stage: test
+  image: 
+    # name: zricethezav/gitleaks:v8.17.0
+    name: gitlab-registry.doman.com/container/iac-cicd:1.0.0
+    entrypoint: [""] 
+  script: 
+    - ls -la && pwd
+    - gitleaks version
+    - gitleaks detect -c=${CI_PROJECT_DIR}/gitleaks-config.toml --no-git --source . -v --redact
+  needs:
+    - job: Terraform Plan
+  tags:
+    - docker-socket
+
+5. TFLint:
+  stage: test
+  # image: 
+  #   # name: ghcr.io/terraform-linters/tflint:v0.47.0
+  #   name: gitlab-registry.doman.com/container/iac-cicd:1.0.0
+  #   entrypoint: [""] 
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - tflint --version
+    - tflint --init
+    - tflint
+  needs:
+    - job: Terraform Plan
+  tags:
+    - docker-socket
+
+6. tfsec:
+  stage: test
+  # image: 
+  #   # # Issue using the tfsec/tfsec image:
+  #   # # /bin/sh: eval: line 138: can't create //.terraformrc: Permission denied
+  #   # # Can't work with Private GitLab Terraform Module Registry
+  #   # name: tfsec/tfsec:v1.13.2-amd64
+  #   name: gitlab-registry.doman.com/container/iac-cicd:1.0.0
+  #   entrypoint: [""] 
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - tfsec --version
+    - tfsec
+  needs:
+    - job: Terraform Plan
+  tags:
+    - docker-socket
+
+7. checkov:
+  stage: test
+  # image: 
+  #   # name: bridgecrew/checkov:2.3.313
+  #   name: gitlab-registry.doman.com/container/iac-cicd:1.0.0
+  #   entrypoint: [""] 
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    # CKV_TF_1: Hitting this problem when using a module from a GitLab Terraform Registry.
+    - checkov -d . --download-external-modules true --skip-check "CKV_TF_1"
+    # - checkov -d . --download-external-modules true -o junitxml | tee checkov.test.xml
+  needs:
+    - job: Terraform Plan
+  # artifacts:
+  #   reports:
+  #     junit: "terraform/checkov.test.xml"
+  #   paths:
+  #     - "terraform/checkov.test.xml"
+  tags:
+    - docker-socket
+
+8. checkov Terraform Plan:
+  stage: test
+  # image: 
+  #   # name: bridgecrew/checkov:2.3.313
+  #   name: gitlab-registry.doman.com/container/iac-cicd:1.0.0
+  #   entrypoint: [""] 
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - checkov -f tf.json
+  needs:
+    - job: Terraform Plan
+  tags:
+    - docker-socket
+
+# 9. Terrascan:
+#   stage: test
+#   # image: 
+#   #   # name: tenable/terrascan:1.18.1
+#   #   name: gitlab-registry.doman.com/container/iac-cicd:1.0.0
+#   #   entrypoint: [""]
+#   script: 
+#     - cd terraform
+#     - ls -la && pwd
+#     - terrascan version
+#     - terrascan init
+#     - terrascan scan -i=terraform -d ${CI_PROJECT_DIR}/terraform --non-recursive
+#   needs:
+#     - job: Terraform Plan
+
+Terraform Apply:
+  stage: deploy
+  script:
+    - cd terraform
+    - ls -la && pwd
+    - sh terraform-init.sh
+    - sh terraform-apply.sh
+  needs: ["Terraform Plan",
+          "1. Terraform FMT", 
+          "2. Terraform Validate", 
+          "3. Terraform Docs",
+          "4. Gitleaks", 
+          "5. TFLint", 
+          "6. tfsec", 
+          "7. checkov", 
+          "8. checkov Terraform Plan"
+          # "9. Terrascan", 
+        ]
+  when: manual
+  tags:
+    - docker-socket
+
+1/2 Terraform Plan Destroy:
+  stage: destroy
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - sh terraform-init.sh
+    - sh terraform-plan-destroy.sh
+  artifacts:
+    paths:
+      - terraform/destroy.tfdestroy
+  when: manual
+  tags:
+    - docker-socket
+
+2/2 Terraform Destroy:
+  stage: destroy
+  script: 
+    - cd terraform
+    - ls -la && pwd
+    - sh terraform-init.sh
+    - sh terraform-destroy.sh
+  needs:
+    - job: 1/2 Terraform Plan Destroy
+  when: manual
+  tags:
+    - docker-socket

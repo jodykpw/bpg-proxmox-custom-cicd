@@ -1,0 +1,9 @@
+# Personal Access Token:
+# Token name: READ_API
+# CI/CD Variable Name: READ_API
+# Scopes: read_api
+# Note: Use for access bpg-proxmox-module
+# Update the variable name,replace gitlab_com with your domain, replace _ with . for the domain,
+credentials "gitlab.com" {
+  token = "<TOKEN>"
+}

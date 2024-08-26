@@ -1,0 +1,101 @@
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.80.0
+    hooks:
+      - id: terraform_fmt
+        name: Terraform fmt
+        description: Rewrites all Terraform configuration files to a canonical format.
+        entry: hooks/terraform_fmt.sh
+        language: script
+        files: ^terraform\/.*\.(tf|tfvars)$
+        exclude: ^terraform\.terraform\/.*$
+
+      - id: terraform_validate
+        name: Terraform validate
+        description: Validates all Terraform configuration files.
+        require_serial: true
+        entry: hooks/terraform_validate.sh
+        language: script
+        files: ^terraform\/.*\.(tf|tfvars)$
+        exclude: ^terraform\.terraform\/.*$
+
+      - id: terraform_docs
+        name: Terraform docs
+        description: Inserts input and output documentation into README.md (using terraform-docs).
+        require_serial: true
+        entry: hooks/terraform_docs.sh
+        language: script
+        files: ^terraform\/.*\.(tf|tfvars)$
+        exclude: ^(terraform\.terraform\/.*|terraform\/examples\/.*)$
+        args:
+          - --hook-config=--path-to-file=README.md        # Valid UNIX path. I.e. ../TFDOC.md or docs/README.md etc.
+          - --hook-config=--add-to-existing-file=false     # Boolean. true or false
+          - --hook-config=--create-file-if-not-exist=true # Boolean. true or false
+
+      - id: terraform_docs_replace
+        name: Terraform docs (overwrite README.md)
+        description: Overwrite content of README.md with terraform-docs.
+        require_serial: true
+        entry: terraform_docs_replace
+        language: python
+        files: ^terraform\/.*\.(tf|tfvars)$
+        exclude: ^(terraform\.terraform\/.*|terraform\/examples\/.*)$
+
+      - id: terraform_tflint
+        name: Terraform validate with tflint
+        description: Validates all Terraform configuration files with TFLint.
+        require_serial: true
+        entry: hooks/terraform_tflint.sh
+        language: script
+        files: ^terraform\/.*\.(tf|tfvars)$
+        exclude: ^terraform\.terraform\/.*$
+
+      - id: terraform_tfsec
+        name: Terraform validate with tfsec
+        description: Static analysis of Terraform templates to spot potential security issues.
+        require_serial: true
+        entry: hooks/terraform_tfsec.sh
+        language: script
+
+      # - id: terrascan
+      #   name: terrascan
+      #   description: Runs terrascan on Terraform templates.
+      #   language: script
+      #   entry: hooks/terrascan.sh
+      #   files: ^terraform\/.*\.(tf|tfvars)$
+      #   exclude: ^terraform\.terraform\/.*$
+      #   require_serial: true
+      #   args:
+      #     - --args=--non-recursive # avoids scan errors on subdirectories without Terraform config files
+
+      - id: checkov
+        # I am currently experiencing a few issues while working with terraform_checkov:
+        # Issue 1: checkov fails to scan modules hosted in private repos:
+        # https://github.com/bridgecrewio/checkov/issues/2098
+        # --skip-check not working...
+        name: checkov (deprecated, use "terraform_checkov")
+        description: Runs checkov on Terraform templates.
+        entry: checkov -d .
+        language: python
+        pass_filenames: false
+        always_run: false
+        files: ^terraform\/.*\.tf$
+        exclude: ^terraform\.terraform\/.*$
+        require_serial: true
+        args: [
+          "-d", ".",
+          "--skip-check", "CKV_TF_1", # Hitting this problem when using a module from a GitLab Terraform Registry.
+        ]
+
+      # - id: terraform_checkov
+      #   name: Checkov
+      #   description: Runs checkov on Terraform templates.
+      #   entry: hooks/terraform_checkov.sh
+      #   language: script
+      #   always_run: true
+      #   files: \.tf$
+      #   exclude: \.terraform\/.*$
+      #   require_serial: true
+      #   args:
+      #     - --args=--quiet
+      #     - --args=--skip-check CKV_TF_1 # Hitting this problem when using a module from a GitLab Terraform Registry.
